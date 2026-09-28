@@ -1,10 +1,8 @@
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
-import java.nio.ByteBuffer;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 
 public class ServidorTema07UDP {
     public static void main(String[] args) {
@@ -18,51 +16,37 @@ public class ServidorTema07UDP {
                 pasta.mkdir();
             }
             
+            // Loop infinito para continuar recebendo novas imagens
             while(true) {
-                System.out.println("Aguardando nova imagem do cliente...");
+                ByteArrayOutputStream bufferImagem = new ByteArrayOutputStream();
                 boolean recebendo = true;
-                byte[] imagemRemontada = null;
                 
-                // Loop para receber os pacotes
+                System.out.println("Aguardando nova imagem do cliente...");
+                
+                // Loop para receber os pedaços (fragmentos) de uma mesma imagem
                 while (recebendo) {
-                    byte[] receiveData = new byte[1500]; // Buffer seguro para cabeçalho + 1024 bytes
+                    byte[] receiveData = new byte[60000]; // Buffer maior que o original de 1024
                     DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
                     serverSocket.receive(receivePacket);
                     
-                    ByteBuffer buffer = ByteBuffer.wrap(receivePacket.getData(), 0, receivePacket.getLength());
+                    int tamanhoRecebido = receivePacket.getLength();
+                    String textoRecebido = new String(receivePacket.getData(), 0, tamanhoRecebido);
                     
-                    // Lê o PRIMEIRO BYTE para saber se é INIT, DATA ou END
-                    byte tipo = buffer.get(); 
-                    
-                    if (tipo == 'I') {
-                        // Trata o pacote INIT: inicializa o buffer na memória com o tamanho total
-                        int tamanhoTotal = buffer.getInt();
-                        imagemRemontada = new byte[tamanhoTotal];
-                        
-                    } else if (tipo == 'D' && imagemRemontada != null) {
-                        // Trata o pacote DATA: pega o número de sequência e remonta na ordem exata
-                        int sequencia = buffer.getInt();
-                        int tamanhoPayload = receivePacket.getLength() - 5; // 1 byte de tipo + 4 bytes de int
-                        
-                        // Calcula a posição de memória exata para colocar esse fragmento
-                        int posicao = sequencia * 1024; 
-                        
-                        System.arraycopy(receivePacket.getData(), 5, imagemRemontada, posicao, tamanhoPayload);
-                        
-                    } else if (tipo == 'E') {
-                        // Trata o pacote END: encerra o loop de recepção
+                    // Verifica se o cliente enviou o pacote "fim", igual no exemplo original
+                    if (textoRecebido.equals("fim")) {
                         recebendo = false;
+                    } else {
+                        // Vai juntando os pedaços da imagem na memória
+                        bufferImagem.write(receivePacket.getData(), 0, tamanhoRecebido);
                     }
                 }
                 
-                if (imagemRemontada != null && imagemRemontada.length > 0) {
-                    // Uso do SimpleDateFormat para gerar o nome do arquivo com a data e hora
-                    SimpleDateFormat formatador = new SimpleDateFormat("yyyyMMdd_HHmmss_SSS");
-                    String dataHora = formatador.format(new Date());
-                    
-                    String nomeArquivo = "imagens_recebidas/print_" + dataHora + ".jpg";
+                byte[] imagemCompleta = bufferImagem.toByteArray();
+                if (imagemCompleta.length > 0) {
+                    // Salva o arquivo na pasta
+                    String nomeArquivo = "imagens_recebidas/print_" + System.currentTimeMillis() + ".jpg";
                     FileOutputStream fos = new FileOutputStream(nomeArquivo);
-                    fos.write(imagemRemontada);
+                    fos.write(imagemCompleta);
                     fos.close();
                     System.out.println("Imagem remontada e salva com sucesso: " + nomeArquivo);
                 }
